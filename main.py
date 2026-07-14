@@ -1,11 +1,21 @@
-from fastapi import FastAPI, Response
+from fastapi import FastAPI, Header, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 import io
+import os
+
 from minutes_builder import build_minutes_docx
 
+
 app = FastAPI(title="Stelic Docx Builder")
+
+DOCX_TOKEN = os.getenv("DOCX_TOKEN", "")
+
+
+def verify_token(x_auth_token: str = Header(None)):
+    if DOCX_TOKEN and x_auth_token != DOCX_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 
 class MeetingInfo(BaseModel):
@@ -79,7 +89,7 @@ def health():
 
 
 @app.post("/build-minutes")
-def build_minutes(req: MinutesRequest):
+def build_minutes(req: MinutesRequest, auth: None = Depends(verify_token)):
     buffer = build_minutes_docx(req.model_dump())
     return StreamingResponse(
         io.BytesIO(buffer),
