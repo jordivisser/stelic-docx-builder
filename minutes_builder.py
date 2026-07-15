@@ -47,6 +47,9 @@ def _add_kv_row(table, key: str, value: str):
     row = table.add_row()
     row.cells[0].text = key
     row.cells[1].text = value
+    # Set explicit widths so long values wrap instead of overflowing
+    row.cells[0].width = Cm(3.5)
+    row.cells[1].width = Cm(12.5)
     # Bold the key
     for para in row.cells[0].paragraphs:
         for run in para.runs:
@@ -89,7 +92,11 @@ def build_minutes_docx(payload: dict) -> bytes:
 
     # Meeting metadata table
     meta_table = doc.add_table(rows=0, cols=2)
-    meta_table.autofit = True
+    meta_table.autofit = False
+    meta_table.allow_autofit = False
+    # Total width ~16cm (page width minus margins). Key column narrow, value wide.
+    _KEY_WIDTH = Cm(3.5)
+    _VAL_WIDTH = Cm(12.5)
     _add_kv_row(meta_table, "Date", meeting['date'])
     _add_kv_row(meta_table, "Duration", f"{meeting['duration_minutes']} minutes")
     _add_kv_row(meta_table, "Attendees", ", ".join(meeting['attendees']))
@@ -226,8 +233,18 @@ def _render_todo_section(doc: Document, title: str, todos: list):
     if not todos:
         return
     _add_heading(doc, title, level=2)
+
+    # Sort by owner alphabetically, then by description for stable ordering within owner
+    sorted_todos = sorted(
+        todos,
+        key=lambda t: (t.get('owner', 'zzz').lower(), t.get('description', ''))
+    )
+
     tbl = doc.add_table(rows=1, cols=4)
     tbl.style = 'Light Grid Accent 1'
+    tbl.autofit = False
+    tbl.allow_autofit = False
+
     hdr = tbl.rows[0].cells
     hdr[0].text = "Owner"
     hdr[1].text = "Description"
@@ -238,10 +255,26 @@ def _render_todo_section(doc: Document, title: str, todos: list):
             for run in para.runs:
                 run.bold = True
 
-    for todo in todos:
+    # Column widths that add to ~16cm
+    col_widths = [Cm(2.8), Cm(6.5), Cm(2.0), Cm(4.7)]
+
+    # Set header widths
+    for i, w in enumerate(col_widths):
+        hdr[i].width = w
+
+    last_owner = None
+    for todo in sorted_todos:
         row = tbl.add_row()
-        row.cells[0].text = todo.get('owner', '')
+        owner = todo.get('owner', '')
+        # Blank out repeated owner cell to visually group the same owner's items
+        row.cells[0].text = '' if owner == last_owner else owner
         row.cells[1].text = todo.get('description', '')
         due = todo.get('due_date')
         row.cells[2].text = due if due else "—"
         row.cells[3].text = f'"{todo.get("source_quote", "")}"'
+
+        # Widths again per row
+        for i, w in enumerate(col_widths):
+            row.cells[i].width = w
+
+        last_owner = owner
