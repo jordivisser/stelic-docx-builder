@@ -74,7 +74,11 @@ class Agenda(BaseModel):
     tabled_items: List[str] = []
 
 
-class MinutesRequest(BaseModel):
+class MeetingNote(BaseModel):
+    topic: str
+    discussion: str
+    decision: Optional[str] = ""
+    open_questions: List[str] = []
     meeting: MeetingInfo
     l10_score: L10Score
     todos: TodoBundle
@@ -82,6 +86,14 @@ class MinutesRequest(BaseModel):
     agenda: Agenda
     filename: str
 
+class MinutesRequest(BaseModel):
+    meeting: MeetingInfo
+    meeting_notes: List[MeetingNote] = []
+    l10_score: L10Score
+    todos: TodoBundle
+    retreat_items: List[RetreatItem] = []
+    agenda: Agenda
+    filename: str
 
 @app.get("/health")
 def health():

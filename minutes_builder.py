@@ -165,6 +165,40 @@ def build_minutes_docx(payload: dict) -> bytes:
         for flag in l10['flags']:
             doc.add_paragraph(flag, style='List Bullet')
 
+    # ---- MEETING NOTES ----
+    meeting_notes = payload.get('meeting_notes', [])
+    if meeting_notes:
+        doc.add_page_break()
+        _add_heading(doc, "Meeting Notes", level=1)
+        doc.add_paragraph(
+            "Narrative summary of topics discussed, organized by subject."
+        ).italic = True
+
+        for note in meeting_notes:
+            _add_heading(doc, note.get('topic', 'Untitled Topic'), level=2)
+
+            # Discussion
+            if note.get('discussion'):
+                doc.add_paragraph(note['discussion'])
+
+            # Decision (if any)
+            if note.get('decision'):
+                p = doc.add_paragraph()
+                label = p.add_run("Decision: ")
+                label.bold = True
+                label.font.color.rgb = BRAND_DARK
+                p.add_run(note['decision'])
+
+            # Open questions
+            open_qs = note.get('open_questions', [])
+            if open_qs:
+                p = doc.add_paragraph()
+                label = p.add_run("Open questions:")
+                label.bold = True
+                label.font.color.rgb = BRAND_DARK
+                for q in open_qs:
+                    doc.add_paragraph(q, style='List Bullet')
+                    
     # ---- TO-DOS ----
     doc.add_page_break()
     _add_heading(doc, "To-Dos", level=1)
