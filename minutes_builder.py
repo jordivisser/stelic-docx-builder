@@ -56,89 +56,9 @@ def _add_kv_row(table, key: str, value: str):
             run.bold = True
 
 
-def build_minutes_docx(payload: dict) -> bytes:
-    doc = Document()
-
-    # Global styles
-    style = doc.styles['Normal']
-    style.font.name = 'Calibri'
-    style.font.size = Pt(11)
-
-    # Set margins
-    for section in doc.sections:
-        section.top_margin = Cm(2)
-        section.bottom_margin = Cm(2)
-        section.left_margin = Cm(2)
-        section.right_margin = Cm(2)
-
-    meeting = payload['meeting']
-    l10 = payload['l10_score']
-    todos = payload['todos']
-    retreat_items = payload.get('retreat_items', [])
-    agenda = payload.get('agenda', {})
-
-    # ---- TITLE BLOCK ----
-    title = doc.add_paragraph()
-    title.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    run = title.add_run("Exec Weekly Minutes")
-    run.font.size = Pt(24)
-    run.font.bold = True
-    run.font.color.rgb = BRAND_DARK
-
-    subtitle = doc.add_paragraph()
-    sub_run = subtitle.add_run(meeting['title'])
-    sub_run.font.size = Pt(14)
-    sub_run.font.color.rgb = GREY
-
-    # Meeting metadata table
-    meta_table = doc.add_table(rows=0, cols=2)
-    meta_table.autofit = False
-    meta_table.allow_autofit = False
-    # Total width ~16cm (page width minus margins). Key column narrow, value wide.
-    _KEY_WIDTH = Cm(3.5)
-    _VAL_WIDTH = Cm(12.5)
-    _add_kv_row(meta_table, "Date", meeting['date'])
-    _add_kv_row(meta_table, "Duration", f"{meeting['duration_minutes']} minutes")
-    _add_kv_row(meta_table, "Attendees", ", ".join(meeting['attendees']))
-    if l10.get('attendees_missing'):
-        _add_kv_row(meta_table, "Missing", ", ".join(l10['attendees_missing']))
-
-    doc.add_paragraph()  # spacer
-
-    # ---- L10 SCORE ----
-    _add_heading(doc, "Level 10 Score", level=1)
-
-    overall_p = doc.add_paragraph()
-    overall_run = overall_p.add_run(f"Overall: {l10['overall_score']} / 10")
-    overall_run.font.size = Pt(18)
-    overall_run.font.bold = True
-    overall_score = l10['overall_score']
-    if overall_score >= 8:
-        overall_run.font.color.rgb = GREEN
-    elif overall_score >= 5:
-        overall_run.font.color.rgb = AMBER
-    else:
-        overall_run.font.color.rgb = RED
-
-    summary_p = doc.add_paragraph()
-    summary_run = summary_p.add_run(l10['one_line_summary'])
-    summary_run.italic = True
-    summary_run.font.color.rgb = GREY
-
-    # Subscore table
-    score_table = doc.add_table(rows=1, cols=3)
-    score_table.style = 'Light Grid Accent 1'
-    hdr = score_table.rows[0].cells
-    hdr[0].text = "Category"
-    hdr[1].text = "Score"
-    hdr[2].text = "Evidence"
-    for cell in hdr:
-        for para in cell.paragraphs:
-            for run in para.runs:
-                run.bold = True
-                run.font.color.rgb = BRAND_DARK
-
-    category_labels = {
+# Rubric labels per meeting type — key mappings for pretty display
+RUBRIC_LABELS = {
+    "weekly_l10": {
         "on_time": "On-time start and end",
         "segue": "Segue",
         "scorecard": "Scorecard review",
@@ -148,25 +68,147 @@ def build_minutes_docx(payload: dict) -> bytes:
         "ids_discipline": "IDS discipline",
         "cascading_messages": "Cascading messages",
         "conclude_and_rate": "Conclude and rate"
+    },
+    "quarterly_pulsing": {
+        "segue": "Segue",
+        "rock_completion": "Prior-quarter Rock completion",
+        "ids_discipline": "IDS discipline",
+        "new_rocks": "Next-quarter Rocks set",
+        "vto_review": "V/TO review",
+        "conclude": "Conclude and next steps"
+    },
+    "annual_planning": {
+        "vto_refresh": "V/TO refresh",
+        "prior_year_review": "Prior-year review",
+        "three_year_picture": "3-Year Picture",
+        "one_year_plan": "1-Year Plan",
+        "q1_rocks": "Q1 Rocks",
+        "ids_discipline": "IDS discipline",
+        "team_health": "Team health"
+    },
+    "vision_building": {
+        "core_values": "Core Values",
+        "core_focus": "Core Focus",
+        "ten_year_target": "10-Year Target",
+        "marketing_strategy": "Marketing Strategy",
+        "three_year_picture": "3-Year Picture"
+    },
+    "same_page": {
+        "gwc": "GWC check-in",
+        "personal_business_check_in": "Personal + business check-in",
+        "issues_ids": "Business issues (IDS)",
+        "commitments": "Commitments for next meeting"
     }
+}
 
-    for key, label in category_labels.items():
-        sub = l10['subscores'].get(key, {"score": 0, "evidence": "no evidence"})
-        row = score_table.add_row()
-        row.cells[0].text = label
-        row.cells[1].text = f"{sub['score']}"
-        row.cells[2].text = sub.get('evidence', '')
-        _shade_cell(row.cells[1], _score_color(sub['score']))
+TYPE_TITLE_LABELS = {
+    "weekly_l10": "Weekly L10 Minutes",
+    "quarterly_pulsing": "Quarterly Pulsing Minutes",
+    "annual_planning": "Annual Planning Minutes",
+    "vision_building": "Vision Building Session Minutes",
+    "same_page": "Same-Page Meeting Notes",
+    "other": "Meeting Notes"
+}
 
-    # Flags
-    if l10.get('flags'):
-        doc.add_paragraph()
-        _add_heading(doc, "Flags", level=2)
-        for flag in l10['flags']:
-            doc.add_paragraph(flag, style='List Bullet')
+
+def build_minutes_docx(payload: dict) -> bytes:
+    doc = Document()
+
+    # Global styles
+    style = doc.styles['Normal']
+    style.font.name = 'Calibri'
+    style.font.size = Pt(11)
+
+    for section in doc.sections:
+        section.top_margin = Cm(2)
+        section.bottom_margin = Cm(2)
+        section.left_margin = Cm(2)
+        section.right_margin = Cm(2)
+
+    meeting = payload['meeting']
+    meeting_type = meeting.get('meeting_type', 'other')
+    scoring = payload.get('scoring')  # may be None for 'other'
+    meeting_notes = payload.get('meeting_notes', [])
+    todos = payload.get('todos')
+    retreat_items = payload.get('retreat_items', [])
+    agenda = payload.get('agenda', {})
+
+    # ---- TITLE BLOCK ----
+    title = doc.add_paragraph()
+    run = title.add_run(TYPE_TITLE_LABELS.get(meeting_type, "Meeting Notes"))
+    run.font.size = Pt(24)
+    run.font.bold = True
+    run.font.color.rgb = BRAND_DARK
+
+    subtitle = doc.add_paragraph()
+    sub_run = subtitle.add_run(meeting['title'])
+    sub_run.font.size = Pt(14)
+    sub_run.font.color.rgb = GREY
+
+    # Metadata table
+    meta_table = doc.add_table(rows=0, cols=2)
+    meta_table.autofit = False
+    meta_table.allow_autofit = False
+    _add_kv_row(meta_table, "Date", meeting['date'])
+    _add_kv_row(meta_table, "Duration", f"{meeting['duration_minutes']} minutes")
+    _add_kv_row(meta_table, "Attendees", ", ".join(meeting['attendees']))
+    _add_kv_row(meta_table, "Meeting Type", TYPE_TITLE_LABELS.get(meeting_type, meeting_type))
+    if meeting.get('type_confidence') is not None:
+        conf_pct = int(meeting['type_confidence'] * 100)
+        _add_kv_row(meta_table, "Type Confidence", f"{conf_pct}%")
+
+    doc.add_paragraph()
+
+    # ---- SCORE (skipped for 'other') ----
+    if scoring is not None and meeting_type in RUBRIC_LABELS:
+        _add_heading(doc, f"{TYPE_TITLE_LABELS[meeting_type].replace(' Minutes', '')} Score", level=1)
+
+        overall_p = doc.add_paragraph()
+        overall_run = overall_p.add_run(f"Overall: {scoring['overall_score']} / 10")
+        overall_run.font.size = Pt(18)
+        overall_run.font.bold = True
+        score_val = scoring['overall_score']
+        if score_val >= 8:
+            overall_run.font.color.rgb = GREEN
+        elif score_val >= 5:
+            overall_run.font.color.rgb = AMBER
+        else:
+            overall_run.font.color.rgb = RED
+
+        summary_p = doc.add_paragraph()
+        summary_run = summary_p.add_run(scoring['one_line_summary'])
+        summary_run.italic = True
+        summary_run.font.color.rgb = GREY
+
+        # Subscore table
+        score_table = doc.add_table(rows=1, cols=3)
+        score_table.style = 'Light Grid Accent 1'
+        hdr = score_table.rows[0].cells
+        hdr[0].text = "Category"
+        hdr[1].text = "Score"
+        hdr[2].text = "Evidence"
+        for cell in hdr:
+            for para in cell.paragraphs:
+                for run in para.runs:
+                    run.bold = True
+                    run.font.color.rgb = BRAND_DARK
+
+        labels = RUBRIC_LABELS[meeting_type]
+        for key, label in labels.items():
+            sub = scoring['subscores'].get(key, {"score": 0, "evidence": "no evidence"})
+            row = score_table.add_row()
+            row.cells[0].text = label
+            row.cells[1].text = f"{sub['score']}"
+            row.cells[2].text = sub.get('evidence', '')
+            _shade_cell(row.cells[1], _score_color(sub['score']))
+
+        if scoring.get('flags'):
+            doc.add_paragraph()
+            _add_heading(doc, "Flags", level=2)
+            for flag in scoring['flags']:
+                doc.add_paragraph(flag, style='List Bullet')
 
     # ---- MEETING NOTES ----
-    meeting_notes = payload.get('meeting_notes', [])
     if meeting_notes:
         doc.add_page_break()
         _add_heading(doc, "Meeting Notes", level=1)
@@ -177,11 +219,9 @@ def build_minutes_docx(payload: dict) -> bytes:
         for note in meeting_notes:
             _add_heading(doc, note.get('topic', 'Untitled Topic'), level=2)
 
-            # Discussion
             if note.get('discussion'):
                 doc.add_paragraph(note['discussion'])
 
-            # Decision (if any)
             if note.get('decision'):
                 p = doc.add_paragraph()
                 label = p.add_run("Decision: ")
@@ -189,7 +229,6 @@ def build_minutes_docx(payload: dict) -> bytes:
                 label.font.color.rgb = BRAND_DARK
                 p.add_run(note['decision'])
 
-            # Open questions
             open_qs = note.get('open_questions', [])
             if open_qs:
                 p = doc.add_paragraph()
@@ -198,16 +237,16 @@ def build_minutes_docx(payload: dict) -> bytes:
                 label.font.color.rgb = BRAND_DARK
                 for q in open_qs:
                     doc.add_paragraph(q, style='List Bullet')
-                    
-    # ---- TO-DOS ----
-    doc.add_page_break()
-    _add_heading(doc, "To-Dos", level=1)
 
-    if todos['total_count'] == 0:
-        doc.add_paragraph("No to-dos captured this meeting.").italic = True
-    else:
-        _render_todo_section(doc, "New To-Dos", todos.get('new', []))
-        _render_todo_section(doc, "Carryover To-Dos", todos.get('carryover', []))
+    # ---- TO-DOS ----
+    if todos is not None:
+        doc.add_page_break()
+        _add_heading(doc, "To-Dos", level=1)
+        if todos.get('total_count', 0) == 0:
+            doc.add_paragraph("No to-dos captured this meeting.").italic = True
+        else:
+            _render_todo_section(doc, "New To-Dos", todos.get('new', []))
+            _render_todo_section(doc, "Carryover To-Dos", todos.get('carryover', []))
 
     # ---- RETREAT ITEMS ----
     if retreat_items:
@@ -225,38 +264,40 @@ def build_minutes_docx(payload: dict) -> bytes:
             if item.get('raised_by'):
                 p.add_run(f" (raised by {item['raised_by']})").italic = True
 
-    # ---- NEXT AGENDA ----
-    doc.add_page_break()
-    _add_heading(doc, "Draft Agenda: Next Meeting", level=1)
+    # ---- NEXT AGENDA (only for recurring meeting types) ----
+    if meeting_type in ('weekly_l10', 'quarterly_pulsing', 'same_page'):
+        doc.add_page_break()
+        _add_heading(doc, "Draft Agenda: Next Meeting", level=1)
 
-    agenda_sections = [
-        ("Scorecard items to revisit", agenda.get('carryover_scorecard_items', [])),
-        ("Rocks off-track", agenda.get('carryover_rocks_offtrack', [])),
-        ("Open to-dos for review", agenda.get('open_todos_for_review', [])),
-        ("Unresolved issues", agenda.get('unresolved_issues', [])),
-        ("Tabled items", agenda.get('tabled_items', []))
-    ]
+        agenda_sections = [
+            ("Scorecard items to revisit", agenda.get('carryover_scorecard_items', [])),
+            ("Rocks off-track", agenda.get('carryover_rocks_offtrack', [])),
+            ("Open to-dos for review", agenda.get('open_todos_for_review', [])),
+            ("Unresolved issues", agenda.get('unresolved_issues', [])),
+            ("Tabled items", agenda.get('tabled_items', []))
+        ]
 
-    for section_title, items in agenda_sections:
-        _add_heading(doc, section_title, level=2)
-        if not items:
-            p = doc.add_paragraph("None.")
-            p.runs[0].italic = True
-        else:
-            for item in items:
-                doc.add_paragraph(item, style='List Bullet')
+        for section_title, items in agenda_sections:
+            _add_heading(doc, section_title, level=2)
+            if not items:
+                p = doc.add_paragraph("None.")
+                p.runs[0].italic = True
+            else:
+                for item in items:
+                    doc.add_paragraph(item, style='List Bullet')
 
     # ---- FOOTER ----
     doc.add_paragraph()
     footer_p = doc.add_paragraph()
     footer_run = footer_p.add_run(
-        f"Generated from Fireflies transcript {meeting['transcript_id']}"
+        f"Generated from Fireflies transcript {meeting['transcript_id']} · "
+        f"Classified as {meeting_type} "
+        f"({meeting.get('type_reasoning', '')})"
     )
     footer_run.font.size = Pt(8)
     footer_run.font.color.rgb = GREY
     footer_run.italic = True
 
-    # Serialize to bytes
     buffer = io.BytesIO()
     doc.save(buffer)
     buffer.seek(0)

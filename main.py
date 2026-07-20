@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Header, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import io
 import os
 
@@ -26,6 +26,9 @@ class MeetingInfo(BaseModel):
     attendees: List[str]
     participant_emails: List[str] = []
     transcript_id: str
+    meeting_type: str
+    type_confidence: Optional[float] = None
+    type_reasoning: Optional[str] = ""
 
 
 class Subscore(BaseModel):
@@ -33,7 +36,7 @@ class Subscore(BaseModel):
     evidence: str
 
 
-class L10Score(BaseModel):
+class Scoring(BaseModel):
     meeting_date: str
     duration_minutes: int
     attendees_present: List[str] = []
@@ -79,20 +82,15 @@ class MeetingNote(BaseModel):
     discussion: str
     decision: Optional[str] = ""
     open_questions: List[str] = []
-    meeting: MeetingInfo
-    l10_score: L10Score
-    todos: TodoBundle
-    retreat_items: List[RetreatItem] = []
-    agenda: Agenda
-    filename: str
+
 
 class MinutesRequest(BaseModel):
     meeting: MeetingInfo
     meeting_notes: List[MeetingNote] = []
-    l10_score: L10Score
-    todos: TodoBundle
+    scoring: Optional[Scoring] = None
+    todos: Optional[TodoBundle] = None
     retreat_items: List[RetreatItem] = []
-    agenda: Agenda
+    agenda: Optional[Agenda] = None
     filename: str
 
 @app.get("/health")
