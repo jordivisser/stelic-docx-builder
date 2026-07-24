@@ -131,7 +131,7 @@ def build_minutes_docx(payload: dict) -> bytes:
     meeting_notes = payload.get('meeting_notes', [])
     todos = payload.get('todos')
     retreat_items = payload.get('retreat_items', [])
-    agenda = payload.get('agenda', {})
+    agenda = payload.get('agenda') or {}
 
     # ---- TITLE BLOCK ----
     title = doc.add_paragraph()
